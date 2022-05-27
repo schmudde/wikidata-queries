@@ -1,0 +1,449 @@
+#+TITLE: Wikidata Queries
+#+AUTHOR: David Schmudde
+#+EMAIL: schmudde@yorba.co
+#+LANGUAGE: en
+#+STARTUP: align indent fold
+
+[[https://www.wikidata.org/][Wikidata]] is an incredible source of data. The project is powered by open access principles; any human or machine can read and edit its knowledge base. This means that sites as large as Wikipedia or as small as your personal homepage can rely on this global repository of information.
+
+A quick query in the search bar at [[https://www.wikidata.org/][wikidata.org]] will provide a sense of the knowledge base. But the tool's true power is exposed through its open [[https://en.wikipedia.org/wiki/SPARQL][SPARQL]] endpoint. A person can write a query like [[https://query.wikidata.org/#SELECT%20%3Fdescendant%20%3FdescendantLabel%0AWHERE%0A%7B%0A%20%20wd%3AQ1339%20wdt%3AP40%2B%20%3Fdescendant.%0A%20%20SERVICE%20wikibase%3Alabel%20%7B%20bd%3AserviceParam%20wikibase%3Alanguage%20%22%5BAUTO_LANGUAGE%5D%22.%20%7D%0A%7D][Who are the descendants of Johann Sebastian Bach?]][^bach] or [[https://query.wikidata.org/#%23Humans%20who%20died%20on%20a%20specific%20date%20on%20the%20English%20Wikipedia%2C%20ordered%20by%20label%0ASELECT%20%3Fitem%20%3Farticlename%20%3FitemLabel%20%3FitemDescription%20%3Fsl%0AWHERE%20%7B%0A%20%20%20VALUES%20%3Fdod%20%7B%22%2B2001-08-25%22%5E%5Exsd%3AdateTime%7D%0A%20%20%20%20%3Fdod%20%5Ewdt%3AP570%20%3Fitem%20.%0A%20%20%20%20%3Fitem%20wikibase%3Asitelinks%20%3Fsl%20.%0A%20%20%20%20%3Fitem%20%5Eschema%3Aabout%20%3Farticle%20.%0A%20%20%20%20%3Farticle%20schema%3AisPartOf%20%3Chttps%3A%2F%2Fen.wikipedia.org%2F%3E%3B%0A%20%20%20%20schema%3Aname%20%3Farticlename%20.%0A%20%20SERVICE%20wikibase%3Alabel%0A%20%20%20%20%7B%0A%20%20%20%20%20%20bd%3AserviceParam%20wikibase%3Alanguage%20%22en%22%20.%0A%20%20%20%20%20%20%3Fitem%20rdfs%3Alabel%20%3FitemLabel%20.%0A%20%20%20%20%20%20%3Fitem%20schema%3Adescription%20%3FitemDescription%20.%0A%20%20%20%20%7D%0A%20%20BIND%28REPLACE%28%3FitemLabel%2C%20%22%5E.%2a%28%3F%3C%21%20%5BVv%5D%5Bao%5Dn%7C%20%5BDd%5D%5Baeiu%5D%7C%20%5BDd%5D%5Be%5D%5Blns%5D%7C%20%5BLl%5D%5Bae%5D%29%20%28%3F%21%28%5BSJ%5Dr%5C%5C.%3F%7C%5BXVI%5D%2B%29%24%29%22%2C%20%22%22%29%20AS%20%3Fsortname%29%20%20%0A%7D%20ORDER%20BY%20ASC%28UCASE%28%3Fsortname%29%29%20ASC%28UCASE%28%3FitemLabel%29%29][What notable people died on August 8, 2001?]] and immediately receive  an answer from the Wikidata Query Service.
+
+[^bach]: If we used an asterisk instead of a plus here, the query results would include Bach himself.
+
+SPARQL is great but it's a little clumsy if you want to explore the knowledge base. This is the problem that Jack Rusher set out to solve when he created [[https://github.com/jackrusher/mundaneum][Mundaneum]]. Mundaneum combines the interactive principles of  Clojure programming with the power of the Wikidata Query Service.
+
+This guide uses Mundaneum and Clojure to automatically classify businesses on the World Wide Web.[^getting-started] Give me the name of a business or a URL and if it is a website of some prominence, I'll give you a reasonable classification.
+
+[^getting-started]: If you are new to SPARQL or Mundaneum, the [[https://github.com/jackrusher/mundaneum][README]] offers an entertaining raison d'être and the getting started.
+
+The scope of this problem is tremendous. The internet hosts at least [[https://www.internetlivestats.com/total-number-of-websites/][1.5 billion websites]]. Even identifying and categorizing a small fraction of these sites using Wikidata means sifting through nearly [[https://www.wikidata.org/wiki/Special:Statistics][100 billion distinct items]]. Those are some big numbers, so let's get started.
+
+* Get Every Video Game Company on Wikidata
+
+Most entities on Wikidata are assigned a ~instance-of~ property. Atari and https://www.atari.com/ are two different ways of referring to the same video game company. We can say that Atari is an /instance of/ a video game company.
+
+#+begin_src clojure :tangle no
+  (require '[mundaneum.query :refer [query entity describe]])
+  (require '[mundaneum.properties :refer [wdt]])
+#+end_src
+
+#+begin_src clojure :tangle no
+  (describe (entity "Atari"))
+#+end_src
+
+#+RESULTS:
+: brand name owned by Atari Interactive
+
+Roblox also makes video games.
+
+#+begin_src clojure :tangle no
+  (describe (entity "Roblox Corporation"))
+#+end_src
+
+#+RESULTS:
+: American video game developer
+
+The ~instance-of~ properties tend to be quite granular, so Atari and Roblox aren't quite the same thing.
+
+#+begin_src clojure :tangle no
+  (query `{:select [?categoryLabel]
+           :where [[~(entity "Atari") ~(wdt :instance-of) ?category]]})
+#+end_src
+
+#+RESULTS:
+| :categoryLabel | brand                |
+| :categoryLabel | video game publisher |
+| :categoryLabel | enterprise           |
+
+Atari is a /video game publisher/ while Roblox Corporation is deemed an instance of a /video game developer/.
+
+#+begin_src clojure :tangle no
+  (query `{:select [?categoryLabel]
+           :where [[~(entity "Roblox Corporation") ~(wdt :instance-of) ?category]]})
+#+end_src
+
+#+RESULTS:
+| :categoryLabel | video game developer |
+| :categoryLabel | business             |
+
+Both video game publisher and video game developer are subclasses of /video game company/. In fact, /video game company/ has 6 subclasses.
+
+#+begin_src clojure :tangle no
+  (query `{:select [?wikidataId ?wikidataIdLabel]
+           :where [[?wikidataId (+ ~(wdt :subclass-of)) ~(entity "video game company")]]})
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q210167    | :wikidataIdLabel | video game developer           |
+| :wikidataId | :wd/Q1137109   | :wikidataIdLabel | video game publisher           |
+| :wikidataId | :wd/Q100588475 | :wikidataIdLabel | video game translation company |
+| :wikidataId | :wd/Q106103510 | :wikidataIdLabel | mobile app developer           |
+| :wikidataId | :wd/Q16011789  | :wikidataIdLabel | indie games editor             |
+| :wikidataId | :wd/Q106104678 | :wikidataIdLabel | mobile app publisher           |
+
+~(+ ~(wdt :subclass-of))~, with the plus sign prefixed, will traverse /all/ subclasses, even subclasses of subclasses. Switching the plus with an asterisk, ~(* ~(wdt :subclass-of))~, returns 7 results because it includes the top level class itself, /video game company/. Running the query without any prefix, ~(wdt :subclass-of)~, will returns only the 3 immediate subclasses of /video game company/.
+
+This is everything needed to start a Video Games category. The query will ~select~ all items (~?wikidataId~, ~?wikidataIdLabel~) on Wikidata that have a URL (the ~?urlLabel~ from the ~?url~) ~where~ two conditions are met. The conditions are:
+
+1. Each item should be an instance of /video game company/.
+2. Each item must have an ~official-website~. This is the URL.
+
+#+begin_src clojure :tangle no
+  (count
+   (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel]
+            :where [[?wikidataId ~(wdt :instance-of) ~(entity "video game company")]
+                    [?wikidataId ~(wdt :official-website) ?url]]}))
+#+end_src
+
+#+RESULTS:
+: 0
+
+Oh no, zero results! That's because all the video game companies in Wikidata are actually an instance of one of the subclasses of the /video game company/ property. Updating the command from ~(wdt :instance-of)~ to ~(cat ~(wdt :instance-of) (* ~(wdt :subclass-of)))~ will yield more results when the query is run again.
+
+As described above, an asterisk before a path element returns "zero or more of this element." ~(* ~(wdt :subclass-of))~ will return the subclass of ~~(wdt :instance-of)~. And it will return any subclass of a subclass of an ~~(wdt :instance-of)~. And it will return any subclass of a subclass of a subclass of an ~~(wdt :instance-of)~. And so on until it exhausts all subclasses.[^documentation]
+
+[^documentation]: This is called [[https://www.wikidata.org/wiki/Wikidata:SPARQL_query_service/queries#Querying_a_class_tree][Querying a Class Tree]]. For more information about chaining property paths (indicated by the slash ~/~ in SPARQL), see [[https://www.wikidata.org/wiki/Wikidata:SPARQL_tutorial#Property_paths][the Property Paths documentation]].
+
+#+begin_src clojure :tangle no
+  (count
+   (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel]
+            :where [[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of)))  ~(entity "video game company")]
+                    [?wikidataId ~(wdt :official-website) ?url]]}))
+#+end_src
+
+#+RESULTS:
+: 3456
+
+Returning the first item reveals the structure of the items in the collection. The order is arbitrary.
+
+#+begin_src clojure :tangle no
+  (first
+   (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel]
+            :where [[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of)))  ~(entity "video game company")]
+                    [?wikidataId ~(wdt :official-website) ?url]]}))
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q1049502 | :wikidataIdLabel | Hudson Soft | :urlLabel | http://www.hudson.co.jp |
+
+This query can be used for whatever categories you might want to support; everything from travel websites and technology companies to open source initiatives and [[https://en.wikipedia.org/wiki/Digital_commons_%28economics%29][the digital commons]] can be found on Wikidata. Rather than cutting and pasting the query for each new category, Clojure can make everything easier by turning the query into a reusable function.
+
+But before we get there, a few improvements to the query will provide richer results and demonstrate a bit more about what's actually happening under the hood in Mundaneum.
+
+* Get Logos and Rank the Query Results
+** Get the Logos
+
+It would be nice to have a logo for each website when displaying the results, but it should not be a requirement. The following query adds the ~?logoLabel~ variable, the ~logo-image~ Wikidata property, and the ~:optional~ keyword. The keyword ensures that entities without a logo are not eliminated from the results.
+
+#+begin_src clojure :tangle no
+  (->> (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel]
+                :where [[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]
+                        [?wikidataId ~(wdt :official-website) ?url]
+                        [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]]})
+       (sort-by :logoLabel)
+       last)
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q205500 | :wikidataIdLabel | Zipper Interactive | :urlLabel | http://www.zipperint.com | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/Zipper-logo.svg |
+
+The Clojure code after the query sorts the results into two groups: those who have logos and those who do not. It then returns the last member of the second group. The result is no longer arbitrary. They are sorted alphabetically. However, this is a distinction without meaning. Let's explore a better way to sort.
+
+** Rank the Results
+
+Ordering the results by their popularity on Wikidata can be very useful. Mundaneum already does this when a person invokes the ~entity~ function. Jack Rusher's [[https://github.com/jackrusher/mundaneum][canonical Mundaneum example]] captures the magic nicely.
+
+#+begin_src clojure :tangle no
+  (describe (entity "U2"))
+#+end_src
+
+#+RESULTS:
+: Irish rock band
+
+This result is correct. But U2 is also the name of a spy plane and a subway line in the city of Berlin. Mundaneum chose the Irish Rock Band because it has the largest number of statements associated to this specific Wikidata entry: [[https://www.wikidata.org/wiki/Q396][Q396]], which denotes the band "U2". Mundaneum provides idiosyncratic tools to differentiate the various U2 entities.
+
+#+begin_src clojure :tangle no
+  (describe (entity "U2" (wdt :part-of) (entity "Berlin U-Bahn")))
+#+end_src
+
+#+RESULTS:
+: underground line in Berlin
+
+Ordering the category results by relevancy can provide various benefits. Here's a query that finds every service with a website that is an instance/subclass of /video game company/. The query will ~count~ each ~?predicate~ associated with every ~?wikidataId~ item, associate an ~:optional~ logo, and then ~:order-by~ the number of ~?predicates~ - most to least.[^count]
+
+[^count]: The official documentation [[https://www.wikidata.org/wiki/Wikidata:SPARQL_query_service/query_optimization/ru#Use_COUNT(*)_when_possible][recommends using ~count~ with a wildcard]], rather than an explicit declaration of ~?predicate~ (i.e. ~(count * :as ?count)~ vs. ~(count ?predicate :as ?count)~). It should result in better performance.
+
+#+begin_src clojure :tangle no
+  (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel [(count ?predicate) ?count]]
+           :where [[?wikidataId ?predicate ?object]
+                   [?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]
+                   [?wikidataId ~(wdt :official-website) ?url]
+                   [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]]
+           :group-by [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel]
+           :order-by [(desc ?count)]})
+#+end_src
+
+[[https://www.sega.com][Sega]] ends up being the most significant item at the time of this writing, followed by [[https://www.ubisoft.com/][Ubisoft]].[^logos]
+
+[^logos]: (+ [[http://commons.wikimedia.org/wiki/Special:FilePath/Ubisoft%20logo.svg][logo]]) (+ [[http://commons.wikimedia.org/wiki/Special:FilePath/SEGA%20logo.svg][logo]])
+
+Counting all the statements associated with an entity is tricky. ~[?wikidataId ?predicate ?object]~ sets the stage. It tells the query to grab all items with this subject/predicate/object pattern. The next line, ~[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]~, narrows the query to all items which are an instance of /video game company/ or one of its subclasses.
+
+Starting with the ~[?wikidataId ?predicate ?object]~ query is essential for counting. If it was missing, then the ~count~ would only have access to predicates that were an instance of /video game company/ or one of its subclasses.
+
+It may be useful to look at the query results in another way. There are 537 statements related to Sega, the video game developer.[^family-name]
+
+[^family-name]: ~(entity "Sega" (wdt :instance-of) (entity "family name"))~ is more popular with 1008 associated statements
+
+#+begin_src clojure :tangle no
+  (count
+   (query `{:select [?object ?objectLabel]
+            :where [[~(entity "Sega" (wdt :instance-of) (entity "video game developer")) ?predicate ?object]]}))
+#+end_src
+
+#+RESULTS:
+: 537
+
+Of those 537 statements, 4 of them are ~(wdt :instance-of)~ statements:
+
+#+begin_src clojure :tangle no
+  (query `{:select [?object ?objectLabel]
+           :where [[~(entity "Sega" (wdt :instance-of) (entity "video game developer")) ?predicate ?object]
+                   [~(entity "Sega" (wdt :instance-of) (entity "video game developer")) ~(wdt :instance-of) ?object]]})
+#+end_src
+
+#+RESULTS:
+| :object | :wd/Q210167  | :objectLabel | video game developer |
+| :object | :wd/Q1137109 | :objectLabel | video game publisher |
+| :object | :wd/Q4830453 | :objectLabel | business             |
+| :object | :wd/Q6881511 | :objectLabel | enterprise           |
+
+If the large query started with ~[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]~ then any ~?predicate~ that would be counted would have to be related to an instance/subclass of /video game company/. From the list above, /video game developer/ and /video game publisher/ would qualify but /business/ and /enterprise/ would not.
+
+Rank-by-count is an imperfect system, but it can be useful to sort out the top two or three synonymous item names in larger categories. For example, Apple is a /[[https://www.wikidata.org/wiki/Q4830453][business]]/. While I know I don't mean the fruit, "Apple" could indicate a business that manufactures computers or the business that makes records because /[[https://www.wikidata.org/wiki/Q18127][record label]]/ is a subclass of /business/.
+
+Odds are that most people are talking about the computer manufacturer when they are talking about a business named Apple. Ranking codifies this probability.
+
+* Create a Function For Querying Classes
+
+The next step is to turn this complete query into a reusable function. Mundaneum makes this easy.
+
+#+begin_src clojure :noweb strip-export :tangle wikidata_queries.clj
+  <<namespace>>
+
+  (defn ^:private query-class-and-rank
+    " In: valid wikidata ID (Q####...)
+     Out: collection of entities which are instance-of of x or any subclass of x
+          They are ranked by the total number of predicates associated with the item.
+          Includes logos where available."
+    [x]
+    (query
+     `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel [(count ?predicate) ?count]]
+       :where [[?wikidataId ?predicate ?object]
+               [?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~x]
+               [?wikidataId ~(wdt :official-website) ?url]
+               [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]]
+       :group-by [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel]
+       :order-by [(desc ?count)]}))
+#+end_src
+
+#+RESULTS:
+: nil#'wikidata-queries/query-class-and-rank
+
+#+begin_src clojure :tangle no
+  (-> (entity "video game company")
+      query-class-and-rank
+      first)
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q122741 | :wikidataIdLabel | Sega | :urlLabel | https://www.sega.com | :count | 1074 | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/SEGA%20logo.svg |
+
+Let's try another query. What's the top ranked /package delivery/ service on Wikidata?
+
+#+begin_src clojure :tangle no
+  (-> (entity "package delivery")
+      query-class-and-rank
+      first)
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q155026 | :wikidataIdLabel | United Parcel Service | :urlLabel | https://www.ups.com/ | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/United%20Parcel%20Service%20logo%202014.svg | :count | 306 |
+
+It's not only trivial to query other categories, it's also easy to combine different categories. For example, "Playstation" is not the name of a video game company, it is a video game console. Video game consoles are not a subclass of abstract companies, they are a subclass of other physical entities like electronic toys and manufactured goods.
+
+Therefore our video game category might need to include several different verticals to capture everything in the domain. Making and combining lists of all these entities is idiomatic to Clojure.
+
+#+begin_src clojure :tangle no
+  (def video-games (concat
+                    (query-class-and-rank (entity "video game company"))
+                    (query-class-and-rank (entity "video game distribution platform"))
+                    (query-class-and-rank (entity "video game console"))))
+#+end_src
+
+* Create a Categorization Function
+
+The final piece of the puzzle is a way to search the categories.
+
+#+begin_src clojure :tangle wikidata_queries.clj
+  (defn search-coll
+    "In: search-string: the string to search for
+         search-keyword: the keyword attribute to search - is it a :wikidataIdLabel, a :urlLabel, etc...?
+         search-domain-coll: the search space
+    Out: nil or a collection of matches"
+    [search-string search-keyword search-domain-coll]
+    (when search-string
+      (let [conform #(when % (clojure.string/lower-case %))
+            matches (keep #(when (= (conform (search-keyword %))
+                                    (conform search-string))
+                             %)
+                          search-domain-coll)]
+        (when (seq matches) matches))))
+#+end_src
+
+A quick sanity check: is Atari in the Video Games collection?
+
+#+begin_src clojure :tangle no
+  (search-coll "Atari" :wikidataIdLabel video-games)
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q207922 | :wikidataIdLabel | Atari | :urlLabel | https://www.atari.com/ | :count | 206 | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/Atari%20Official%202012%20Logo.svg |
+
+Lookup by URL is possible.
+
+#+begin_src clojure :tangle no
+  (search-coll "https://www.sega.com" :urlLabel video-games)
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q122741 | :wikidataIdLabel | Sega | :urlLabel | https://www.sega.com | :count | 1074 | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/SEGA%20logo.svg |
+
+Name a few popular gaming companies, distributors, and consoles and return their URLs.
+
+#+begin_src clojure :tangle no
+  (map #(-> (search-coll % :wikidataIdLabel video-games)
+            first
+            :urlLabel)
+       ["Sega" "Steam" "Roblox Corporation" "Battle.net" "PlayStation 3" "Xbox Series X and Series S" "Electronic Arts" "atari"])
+#+end_src
+
+#+RESULTS:
+| https://www.sega.com | https://store.steampowered.com | https://corp.roblox.com/ | https://battle.net | https://www.playstation.com/explore/ps3 | https://www.xbox.com/en-US/consoles/xbox-series-x | https://www.ea.com | https://www.atari.com/ |
+
+* Caveats and Limitations
+
+It should be obvious that company names and URLs vary immensely. "Roblox", "Roblox Corporation", "http://www.roblox.com", and "https://roblox.com" might all be synonymous to us humans but a machine will not be so forgiving. The most robust solution would classify by domain name. Domain names offer a the most consistent, globally unique identifier. Generating quality domain names from URLs is beyond the scope of this article, but I offer a complete tutorial in /[[https://schmud.de/programs/2022-04-25-urls-into-meaningful-names.html][Turning URLs Into Meaningful Names Using Clojure]]/. The addition of a ~:domain~ keyword and other meaningful top-level categories like Travel, Finance, Education, Shopping, and Health would lay the foundation for a robust website classification service.
+
+Mundaneum's emphasis on exploration does come with some drawbacks. Wikidata's human-readable labeling service, invoked above when I looked up the ~:wikidataIdLabel~ and ~:urlLabel~ results, is an expensive operation. It's necessary for natural-language exploration that Mundaneum offers, but it means that many large queries aren't possible using this library.[^label-service].
+
+[^label-service]: The label service is invoked in a SPARQL query with the following command: ~SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }~
+
+It is not possible to count ~DISTINCT~ entities in a Mundaneum query[^count-distinct] and it is not possible to nest queries. But these have been trivial omissions for all the power Mundaneum + Clojure offers.
+
+[^count-distinct]: From the official documentation on [[https://www.wikidata.org/wiki/Wikidata:SPARQL_query_service/queries#Counting][counting and ranking]]: &ldquo;It is generally a good idea to indicate what is being counted, e.g., ~DISTINCT(?spouse)~, although it is also possible to use ~(COUNT (*) AS ?count)~ to count all combinations of variables in scope in the ~SELECT~ block. Leaving out the keyword ~DISTINCT~, i.e., just ~(COUNT(?spouse) AS ?count)~, will count the number of combinations of variables which include a value for the variable ~?spouse~, which may lead to somewhat unexpected results in less simple queries.
+
+Wikidata is an unheralded marvel of open software and an open data. Mundaneum offers a way of exploring the knowledge base using interactive Clojure code. When you dive into it, you'll wish that more systems worked this way.
+
+* Bonus
+
+#+begin_src clojure :tangle no
+  (defn make-alt-label-coll
+    " In: Wikidata entity with a Wikidata Alt Label string. Labels are comma separated.
+     Out: Wikidata entity with a Wikidata Alt Label collection. Labels are lower-cased separate strings."
+    [coll]
+    (if (:wikidataIdAltLabel coll)
+      (update coll :wikidataIdAltLabel (comp #(clojure.string/split % #", ") clojure.string/lower-case))
+      coll))
+
+  (defn ^:private query-class-and-rank
+    " In: valid wikidata ID (Q####...)
+     Out: collection of entities which are instance-of of x or any subclass of x
+          They are ranked by the total number of predicates associated with the item.
+          Includes logos where available."
+    [x]
+    (query
+     `{:select [?wikidataId ?wikidataIdLabel ?wikidataIdAltLabel ?urlLabel ?logoLabel [(count ?predicate) ?count]]
+       :where [[?wikidataId ?predicate ?object]
+               [?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~x]
+               [?wikidataId ~(wdt :official-website) ?url]
+               [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]]
+       :group-by [?wikidataId ?wikidataIdLabel ?wikidataIdAltLabel ?urlLabel ?logoLabel]
+       :order-by [(desc ?count)]}))
+
+  (defn search-coll
+    "In: search-string: the string to search for
+         search-keyword: the keyword attribute to search - is it a :wikidataIdLabel, a :urlLabel, etc...?
+         search-domain-coll: the search space
+    Out: nil or a collection of matches"
+    [search-string search-keyword search-domain-coll]
+    (when search-string
+      (let [conform #(when % (clojure.string/lower-case %))
+            matches (keep #(when (= (conform (search-keyword %))
+                                    (conform search-string))
+                             %)
+                          search-domain-coll)]
+        (when (seq matches) matches))))
+
+  (defn keyword-coll [search-keywords search-coll]
+    (->> (reduce #(flatten (remove nil? (conj %1 (%2 search-coll)))) [] search-keywords)
+         (map #(clojure.string/lower-case %))))
+
+  (defn search-coll-2
+    "In: search-string: the string to search for
+         search-keywords: a vector of keyword attributes to search - [:wikidataIdLabel :urlLabel ...]
+         search-domain-coll: the search space
+    Out: nil or a collection of matches"
+    [search-string search-keywords search-domain-coll]
+    (when search-string
+      (let [conform #(when % (clojure.string/lower-case %))
+            matches (keep #(when (some #{(conform search-string)} (keyword-coll search-keywords %))
+                             %)
+                          search-domain-coll)]
+        (when (seq matches) matches))))
+
+  (search-coll-2 "steam" [:wikidataIdLabel :wikidataIdAltLabel] temp)
+
+  (def temp (->> (entity "video game distribution platform")
+                 query-class-and-rank
+                 (map #(make-alt-label-coll %))))
+
+
+  (reduce (fn [coll [k v]] (into coll v)) [] {:a "a1" :b "b2" :c "c3"})
+
+  (make-alt-label-coll
+   {:wikidataId :wd/Q337535, :wikidataIdLabel "Steam", :urlLabel "https://store.steampowered.com", :logoLabel "http://commons.wikimedia.org/wiki/Special:FilePath/Steam%20icon%20logo.svg", :count 379})
+
+  (make-alt-label-coll
+   {:wikidataId :wd/Q337535, :wikidataIdLabel "Steam", :wikidataIdAltLabel "store.steampowered.com, Steampowered.com", :urlLabel "https://store.steampowered.com", :logoLabel "http://commons.wikimedia.org/wiki/Special:FilePath/Steam%20icon%20logo.svg", :count 379})
+
+#+end_src
+
+A quick sanity check: is Atari in the Video Games collection?
+
+#+begin_src clojure :tangle no
+  (search-coll "Atari" :wikidataIdLabel video-games)
+#+end_src
+
+* Dependencies
+   #+begin_src clojure :tangle ../deps.edn
+     ;; Do not edit.
+     ;; This file is generated from wikidata_queries.org.
+     ;; Edit wikidata_queries.org and and tangle the file.
+
+     {:paths ["src"]
+      :deps {org.clojure/clojure {:mvn/version "1.11.1"}
+             jackrusher/mundaneum {:git/url "https://github.com/jackrusher/mundaneum.git"
+                                   :sha "2fb095924d3595853316b4a7783c2f7015d7deeb"}}}
+   #+end_src
+
+   #+name: namespace
+   #+begin_src clojure :tangle no
+     ;; Do not edit.
+     ;; This file is generated from wikidata_queries.org.
+     ;; Edit wikidata_queries.org and and tangle the file.
+
+     (ns wikidata-queries
+       (:require [mundaneum.query :refer [query entity describe]]
+                 [mundaneum.properties :refer [wdt]]))
+   #+end_src
