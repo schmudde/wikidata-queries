@@ -83,14 +83,14 @@ Both video game publisher and video game developer are subclasses of /video game
 
 ~(+ ~(wdt :subclass-of))~, with the plus sign prefixed, will traverse /all/ subclasses, even subclasses of subclasses. Switching the plus with an asterisk, ~(* ~(wdt :subclass-of))~, returns 7 results because it includes the top level class itself, /video game company/. Running the query without any prefix, ~(wdt :subclass-of)~, will returns only the 3 immediate subclasses of /video game company/.
 
-This is everything needed to start a Video Games category. The query will ~select~ all items (~?wikidataId~, ~?wikidataIdLabel~) on Wikidata that have a URL (the ~?urlLabel~ from the ~?url~) ~where~ two conditions are met. The conditions are:
+This is everything needed to start a Video Games category. The query will select all distinct (~:select-distinct~) items (~?wikidataId~, ~?wikidataIdLabel~) on Wikidata that have a URL (the ~?urlLabel~ from the ~?url~) ~where~ two conditions are met. The conditions are:
 
 1. Each item should be an instance of /video game company/.
 2. Each item must have an ~official-website~. This is the URL.
 
 #+begin_src clojure :tangle no
   (count
-   (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel]
+   (query `{:select-distinct [?wikidataId ?wikidataIdLabel ?urlLabel]
             :where [[?wikidataId ~(wdt :instance-of) ~(entity "video game company")]
                     [?wikidataId ~(wdt :official-website) ?url]]}))
 #+end_src
@@ -106,25 +106,25 @@ As described above, an asterisk before a path element returns "zero or more of t
 
 #+begin_src clojure :tangle no
   (count
-   (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel]
+   (query `{:select-distinct [?wikidataId ?wikidataIdLabel ?urlLabel]
             :where [[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of)))  ~(entity "video game company")]
                     [?wikidataId ~(wdt :official-website) ?url]]}))
 #+end_src
 
 #+RESULTS:
-: 3456
+: 3028
 
 Returning the first item reveals the structure of the items in the collection. The order is arbitrary.
 
 #+begin_src clojure :tangle no
   (first
-   (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel]
+   (query `{:select-distinct [?wikidataId ?wikidataIdLabel ?urlLabel]
             :where [[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of)))  ~(entity "video game company")]
                     [?wikidataId ~(wdt :official-website) ?url]]}))
 #+end_src
 
 #+RESULTS:
-| :wikidataId | :wd/Q1049502 | :wikidataIdLabel | Hudson Soft | :urlLabel | http://www.hudson.co.jp |
+| :wikidataId | :wd/Q1979024 | :wikidataIdLabel | Totally Games | :urlLabel | http://www.totallygames.com |
 
 This query can be used for whatever categories you might want to support; everything from travel websites and technology companies to open source initiatives and [[https://en.wikipedia.org/wiki/Digital_commons_%28economics%29][the digital commons]] can be found on Wikidata. Rather than cutting and pasting the query for each new category, Clojure can make everything easier by turning the query into a reusable function.
 
@@ -136,7 +136,7 @@ But before we get there, a few improvements to the query will provide richer res
 It would be nice to have a logo for each website when displaying the results, but it should not be a requirement. The following query adds the ~?logoLabel~ variable, the ~logo-image~ Wikidata property, and the ~:optional~ keyword. The keyword ensures that entities without a logo are not eliminated from the results.
 
 #+begin_src clojure :tangle no
-  (->> (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel]
+  (->> (query `{:select-distinct [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel]
                 :where [[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]
                         [?wikidataId ~(wdt :official-website) ?url]
                         [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]]})
@@ -171,10 +171,10 @@ This result is correct. But U2 is also the name of a spy plane and a subway line
 
 Ordering the category results by relevancy can provide various benefits. Here's a query that finds every service with a website that is an instance/subclass of /video game company/. The query will ~count~ each ~?predicate~ associated with every ~?wikidataId~ item, associate an ~:optional~ logo, and then ~:order-by~ the number of ~?predicates~ - most to least.[^count]
 
-[^count]: The official documentation [[https://www.wikidata.org/wiki/Wikidata:SPARQL_query_service/query_optimization/ru#Use_COUNT(*)_when_possible][recommends using ~count~ with a wildcard]], rather than an explicit declaration of ~?predicate~ (i.e. ~(count * :as ?count)~ vs. ~(count ?predicate :as ?count)~). It should result in better performance.
+[^count]: The documentation [[https://www.wikidata.org/wiki/Wikidata:SPARQL_query_service/query_optimization/ru#Use_COUNT(*)_when_possible][recommends using ~count~ with a wildcard]] for better performance (i.e. ~(count * :as ?count)~ vs. ~(count ?predicate :as ?count)~). However, the documentation on [[https://www.wikidata.org/wiki/Wikidata:SPARQL_query_service/queries#Counting][counting and ranking]] recommends explicitly counting distinct results. &ldquo;It is generally a good idea to indicate what is being counted, e.g., ~DISTINCT(?spouse)~, although it is also possible to use ~(COUNT (*) AS ?count)~ to count all combinations of variables in scope in the ~SELECT~ block. Leaving out the keyword ~DISTINCT~, i.e., just ~(COUNT(?spouse) AS ?count)~, will count the number of combinations of variables which include a value for the variable ~?spouse~, which may lead to somewhat unexpected results in less simple queries.&rdquo; My queries favor accuracy over performance, ~(count ?predicate :distinct? true)~.
 
 #+begin_src clojure :tangle no
-  (query `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel [(count ?predicate) ?count]]
+  (query `{:select-distinct [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel [(count ?predicate :distinct? true) ?count]]
            :where [[?wikidataId ?predicate ?object]
                    [?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]
                    [?wikidataId ~(wdt :official-website) ?url]
@@ -183,9 +183,9 @@ Ordering the category results by relevancy can provide various benefits. Here's 
            :order-by [(desc ?count)]})
 #+end_src
 
-[[https://www.sega.com][Sega]] ends up being the most significant item at the time of this writing, followed by [[https://www.ubisoft.com/][Ubisoft]].[^logos]
+[[https://www.wikidata.org/wiki/Q8093][Nintendo]] ends up being the most significant item at the time of this writing, followed by [[https://www.wikidata.org/wiki/Q173941][Electronic Arts]].[^logos]
 
-[^logos]: (+ [[http://commons.wikimedia.org/wiki/Special:FilePath/Ubisoft%20logo.svg][logo]]) (+ [[http://commons.wikimedia.org/wiki/Special:FilePath/SEGA%20logo.svg][logo]])
+[^logos]: (+ [[http://commons.wikimedia.org/wiki/Special:FilePath/Nintendo.svg][logo]]) (+ [[http://commons.wikimedia.org/wiki/Special:FilePath/Electronic%20Arts%202020.svg][logo]])
 
 Counting all the statements associated with an entity is tricky. ~[?wikidataId ?predicate ?object]~ sets the stage. It tells the query to grab all items with this subject/predicate/object pattern. The next line, ~[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]~, narrows the query to all items which are an instance of /video game company/ or one of its subclasses.
 
@@ -193,7 +193,7 @@ Starting with the ~[?wikidataId ?predicate ?object]~ query is essential for coun
 
 It may be useful to look at the query results in another way. There are 537 statements related to Sega, the video game developer.[^family-name]
 
-[^family-name]: ~(entity "Sega" (wdt :instance-of) (entity "family name"))~ is more popular with 1008 associated statements
+[^family-name]: ~(entity "Sega" (wdt :instance-of) (entity "family name"))~ is more popular with hundreds of associated statements
 
 #+begin_src clojure :tangle no
   (count
@@ -238,7 +238,7 @@ The next step is to turn this complete query into a reusable function. Mundaneum
           Includes logos where available."
     [x]
     (query
-     `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel [(count ?predicate) ?count]]
+     `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel [(count ?predicate :distinct? true) ?count]]
        :where [[?wikidataId ?predicate ?object]
                [?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~x]
                [?wikidataId ~(wdt :official-website) ?url]
@@ -247,17 +247,11 @@ The next step is to turn this complete query into a reusable function. Mundaneum
        :order-by [(desc ?count)]}))
 #+end_src
 
-#+RESULTS:
-: nil#'wikidata-queries/query-class-and-rank
-
 #+begin_src clojure :tangle no
   (-> (entity "video game company")
       query-class-and-rank
       first)
 #+end_src
-
-#+RESULTS:
-| :wikidataId | :wd/Q122741 | :wikidataIdLabel | Sega | :urlLabel | https://www.sega.com | :count | 1074 | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/SEGA%20logo.svg |
 
 Let's try another query. What's the top ranked /package delivery/ service on Wikidata?
 
@@ -268,17 +262,17 @@ Let's try another query. What's the top ranked /package delivery/ service on Wik
 #+end_src
 
 #+RESULTS:
-| :wikidataId | :wd/Q155026 | :wikidataIdLabel | United Parcel Service | :urlLabel | https://www.ups.com/ | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/United%20Parcel%20Service%20logo%202014.svg | :count | 306 |
+| :wikidataId | :wd/Q155026 | :wikidataIdLabel | United Parcel Service | :urlLabel | https://www.ups.com/ | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/United%20Parcel%20Service%20logo%202014.svg | :count | 129 |
 
 It's not only trivial to query other categories, it's also easy to combine different categories. For example, "Playstation" is not the name of a video game company, it is a video game console. Video game consoles are not a subclass of abstract companies, they are a subclass of other physical entities like electronic toys and manufactured goods.
 
 Therefore our video game category might need to include several different verticals to capture everything in the domain. Making and combining lists of all these entities is idiomatic to Clojure.
 
 #+begin_src clojure :tangle no
-  (def video-games (concat
-                    (query-class-and-rank (entity "video game company"))
-                    (query-class-and-rank (entity "video game distribution platform"))
-                    (query-class-and-rank (entity "video game console"))))
+  (def video-games
+    (-> (map (comp query-class-and-rank entity)
+             ["video game company" "video game distribution platform" "video game console"])
+        flatten))
 #+end_src
 
 * Create a Categorization Function
@@ -308,7 +302,7 @@ A quick sanity check: is Atari in the Video Games collection?
 #+end_src
 
 #+RESULTS:
-| :wikidataId | :wd/Q207922 | :wikidataIdLabel | Atari | :urlLabel | https://www.atari.com/ | :count | 206 | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/Atari%20Official%202012%20Logo.svg |
+| :wikidataId | :wd/Q207922 | :wikidataIdLabel | Atari | :urlLabel | https://www.atari.com/ | :count | 98 | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/Atari%20Official%202012%20Logo.svg |
 
 Lookup by URL is possible.
 
@@ -317,7 +311,7 @@ Lookup by URL is possible.
 #+end_src
 
 #+RESULTS:
-| :wikidataId | :wd/Q122741 | :wikidataIdLabel | Sega | :urlLabel | https://www.sega.com | :count | 1074 | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/SEGA%20logo.svg |
+| :wikidataId | :wd/Q122741 | :wikidataIdLabel | Sega | :urlLabel | https://www.sega.com | :count | 188 | :logoLabel | http://commons.wikimedia.org/wiki/Special:FilePath/SEGA%20logo.svg |
 
 Name a few popular gaming companies, distributors, and consoles and return their URLs.
 
@@ -338,10 +332,6 @@ It should be obvious that company names and URLs vary immensely. "Roblox", "Robl
 Mundaneum's emphasis on exploration does come with some drawbacks. Wikidata's human-readable labeling service, invoked above when I looked up the ~:wikidataIdLabel~ and ~:urlLabel~ results, is an expensive operation. It's necessary for natural-language exploration that Mundaneum offers, but it means that many large queries aren't possible using this library.[^label-service].
 
 [^label-service]: The label service is invoked in a SPARQL query with the following command: ~SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE],en". }~
-
-It is not possible to count ~DISTINCT~ entities in a Mundaneum query[^count-distinct] and it is not possible to nest queries. But these have been trivial omissions for all the power Mundaneum + Clojure offers.
-
-[^count-distinct]: From the official documentation on [[https://www.wikidata.org/wiki/Wikidata:SPARQL_query_service/queries#Counting][counting and ranking]]: &ldquo;It is generally a good idea to indicate what is being counted, e.g., ~DISTINCT(?spouse)~, although it is also possible to use ~(COUNT (*) AS ?count)~ to count all combinations of variables in scope in the ~SELECT~ block. Leaving out the keyword ~DISTINCT~, i.e., just ~(COUNT(?spouse) AS ?count)~, will count the number of combinations of variables which include a value for the variable ~?spouse~, which may lead to somewhat unexpected results in less simple queries.
 
 Wikidata is an unheralded marvel of open software and an open data. Mundaneum offers a way of exploring the knowledge base using interactive Clojure code. When you dive into it, you'll wish that more systems worked this way.
 

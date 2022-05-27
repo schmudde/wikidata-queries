@@ -13,9 +13,9 @@
         Includes logos where available."
   [x]
   (query
-   `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel [(count ?predicate) ?count]]
+   `{:select [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel [(count ?predicate :distinct? true) ?count]]
      :where [[?wikidataId ?predicate ?object]
-             [?wikidataId (cat (* ~(wdt :instance-of)) (+ ~(wdt :subclass-of))) ~x]
+             [?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~x]
              [?wikidataId ~(wdt :official-website) ?url]
              [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]]
      :group-by [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel]
