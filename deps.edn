@@ -1,0 +1,8 @@
+;; Do not edit.
+;; This file is generated from wikidata_queries.org.
+;; Edit wikidata_queries.org and and tangle the file.
+
+{:paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.11.1"}
+        jackrusher/mundaneum {:git/url "https://github.com/jackrusher/mundaneum.git"
+                              :sha "2fb095924d3595853316b4a7783c2f7015d7deeb"}}}
