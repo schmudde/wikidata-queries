@@ -263,12 +263,10 @@ Use [[https://www.w3.org/TR/sparql11-query/#func-langMatches][lang-matches]]
 
 
   (defn merge-alt-and-logo [service services-w-alts-logos]
-    (conj service (select-keys ((:wikidataId service) services-w-alts-logos) [:alt :logoLabel]))
-    )
+    (conj service (select-keys ((:wikidataId service) services-w-alts-logos) [:alt :logoLabel])))
 
   (let [conformed-alts (index-items-w-alts-logos alts)]
     (map #(merge-alt-and-logo % conformed-alts) uniques))
-
 #+end_src
 
 
