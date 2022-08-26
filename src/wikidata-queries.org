@@ -224,6 +224,95 @@ Rank-by-count is an imperfect system, but it can be useful to sort out the top t
 
 Odds are that most people are talking about the computer manufacturer when they are talking about a business named Apple. Ranking codifies this probability.
 
+** Get the Aliases (DELETE ME)
+
+Use [[https://www.w3.org/TR/sparql11-query/#func-langMatches][lang-matches]]
+
+#+begin_src clojure :tangle no
+
+  ;; get all uniques and count them - 3093
+  (query `{:select-distinct [?wikidataId ?wikidataIdLabel ?urlLabel [(count ?predicate :distinct? true) ?count]]
+           :where [[?wikidataId ?predicate ?object]
+                   [?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]
+                   [?wikidataId ~(wdt :official-website) ?url]]
+           :group-by [?wikidataId ?wikidataIdLabel ?urlLabel]
+           :order-by [(desc ?count)]})
+
+
+  ;; get all alternative labels as well - 4132
+  (query `{:select-distinct [?wikidataId ?urlLabel ?logoLabel ?alt]
+           :where [[?wikidataId (cat ~(wdt :instance-of) (* ~(wdt :subclass-of))) ~(entity "video game company")]
+                   [?wikidataId ~(wdt :official-website) ?url]
+                   [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]
+                   [:optional [[?wikidataId :skos/altLabel ?alt]
+                               [:filter (lang-matches (lang ?alt) ~(name :en))]]]]
+           :group-by [?wikidataId ?urlLabel ?logoLabel ?alt]})
+
+
+  (defn- assoc-alts-to-coll [colls]
+    (let [get-alts (mapv #(:alt %) colls)]
+      (if (some nil? get-alts)
+        (first colls)
+        (assoc (first colls) :alt get-alts))))
+
+  (defn index-items-w-alts-logos [alt-colls]
+    (let [all-unique-keys (into #{} (map #(:wikidataId %) alt-colls))
+          lookup-key (fn [wiki-key] (filter #(= (:wikidataId %) wiki-key) alt-colls))]
+      (into {}
+            (map #(hash-map % ((comp assoc-alts-to-coll lookup-key) %)) all-unique-keys))))
+
+
+  (defn merge-alt-and-logo [service services-w-alts-logos]
+    (conj service (select-keys ((:wikidataId service) services-w-alts-logos) [:alt :logoLabel]))
+    )
+
+  (let [conformed-alts (index-items-w-alts-logos alts)]
+    (map #(merge-alt-and-logo % conformed-alts) uniques))
+
+#+end_src
+
+
+#+BEGIN_SRC clojure :tangle no
+(let [jag '({:wikidataId :wd/Q650601,
+  :wikidataIdLabel "Atari Jaguar",
+  :wikidataIdAltLabel "Jaguar, Jaguar 64, Jaguar64"})] (clojure.string/split (:wikidataIdAltLabel (first jag)) #", "))
+#+END_SRC
+
+#+RESULTS:
+| Jaguar | Jaguar 64 | Jaguar64 |
+
+#+begin_src clojure :tangle no
+  (->> (query `{:select-distinct [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel ?wikidataIdAltLabel ?alt]
+                :where [[?wikidataId ~(wdt :subclass-of) ~(entity "home video game console")]
+                        [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]
+                        [:optional [[?wikidataId :skos/altLabel ?alt]]]
+                        ]})
+       (sort-by :logoLabel)
+       (filter #(= (:wikidataIdLabel %) "Atari Jaguar")))
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q650601 | :alt | Jaguar    | :wikidataIdLabel | Atari Jaguar | :wikidataIdAltLabel | Jaguar, Jaguar 64, Jaguar64 |
+| :wikidataId | :wd/Q650601 | :alt | Jaguar    | :wikidataIdLabel | Atari Jaguar | :wikidataIdAltLabel | Jaguar, Jaguar 64, Jaguar64 |
+| :wikidataId | :wd/Q650601 | :alt | Jaguar    | :wikidataIdLabel | Atari Jaguar | :wikidataIdAltLabel | Jaguar, Jaguar 64, Jaguar64 |
+| :wikidataId | :wd/Q650601 | :alt | Jaguar 64 | :wikidataIdLabel | Atari Jaguar | :wikidataIdAltLabel | Jaguar, Jaguar 64, Jaguar64 |
+| :wikidataId | :wd/Q650601 | :alt | Jaguar64  | :wikidataIdLabel | Atari Jaguar | :wikidataIdAltLabel | Jaguar, Jaguar 64, Jaguar64 |
+
+#+begin_src clojure :tangle no
+  (->> (query `{:select-distinct [?wikidataId ?wikidataIdLabel ?urlLabel ?logoLabel ?alt]
+                :where [[?wikidataId ~(wdt :subclass-of) ~(entity "home video game console")]
+                        [:optional [[?wikidataId ~(wdt :logo-image) ?logo]]]
+                        [:optional [[?wikidataId :skos/altLabel ?alt]]]
+                        [:filter (= (lang ?alt) ~(name :en))]]})
+       (sort-by :logoLabel)
+       (filter #(= (:wikidataIdLabel %) "Atari Jaguar")))
+#+end_src
+
+#+RESULTS:
+| :wikidataId | :wd/Q650601 | :alt | Jaguar 64 | :wikidataIdLabel | Atari Jaguar |
+| :wikidataId | :wd/Q650601 | :alt | Jaguar64  | :wikidataIdLabel | Atari Jaguar |
+| :wikidataId | :wd/Q650601 | :alt | Jaguar    | :wikidataIdLabel | Atari Jaguar |
+
 * Create a Function For Querying Classes
 
 The next step is to turn this complete query into a reusable function. Mundaneum makes this easy.
